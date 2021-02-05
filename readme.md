@@ -1,5 +1,11 @@
-### Note on Data ####
-The appended Uber movement data is for review process only.
+# Context augmented Graph Autoencoder (Con-GAE)
+Detecting extreme traffic events via a context augmented graph autoencoder
+Yue Hu, Ao Qu and Dan Work, 2021
+
+## Overview
+Context augmented Graph Autoencoder (Con-GAE) aims at detectiing extreme events in traffic origin-destinatin (OD) datasets. Con-GAE leverages graph embedding and context embedding techniques to capture the spatial and temporal patterns in traffic dynamics, and adopts an autoencoder framework to detect anomalies via semi-supervised learning. Pre-processed Uber Movement data is also contained in this repository for tests.
+
+The results are reported in "Detecting extreme traffic events via a context augmented graph autoencoder" by Y.Hu et. al (Preprint). 
 
 
 ## Requirements
@@ -30,7 +36,7 @@ python3 train.py --model 'ConGAE'
 python3 train.py  --model 'ConGAE_t' 
 python3 train.py --model 'ConGAE_sp' 
 ```
-for main model ConGAE and variants ConGAE_t, ConGAE_sp repectively.
+for main model ConGAE and variants ConGAE_t(only temporal embeddings are used), ConGAE_sp(only spatial embeddings are used) repectively.
 
 Full command for ConGAE training is:
 ```
