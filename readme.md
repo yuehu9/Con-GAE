@@ -10,7 +10,8 @@ The results are reported in "Detecting extreme traffic events via a context augm
 
 ## Requirements
 This code was written using python 3.6, Pytorch 1.4.0, Pytorch Geometric 1.4.3
-Oterh required libraries include: numpy, scipy, pandas etc.
+
+Other required libraries include: numpy, scipy, pandas etc.
 
 ## Usage
 First chage directory to /src
