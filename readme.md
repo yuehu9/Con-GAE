@@ -29,7 +29,7 @@ python3 test.py --model 'ConGAE_t'
 python3 test.py --model 'ConGAE_sp'
 
 ```
-for main model ConGAE and variants ConGAE_t, ConGAE_sp repectively.
+for main model ConGAE and variants ConGAE_t(only temporal embeddings are used), ConGAE_sp(only spatial embeddings are used) repectively.
 
 To train model with configurations stated in paper, run:
 ```
@@ -37,7 +37,7 @@ python3 train.py --model 'ConGAE'
 python3 train.py  --model 'ConGAE_t' 
 python3 train.py --model 'ConGAE_sp' 
 ```
-for main model ConGAE and variants ConGAE_t(only temporal embeddings are used), ConGAE_sp(only spatial embeddings are used) repectively.
+for main model ConGAE and variants  ConGAE_t, ConGAE_sp  repectively.
 
 Full command for ConGAE training is:
 ```
