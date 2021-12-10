@@ -11,6 +11,7 @@ import sys
 import random
 import torch.nn as nn
 from torch.utils import data
+from sklearn.model_selection import train_test_split
 
 import pandas as pd
 import matplotlib.pyplot as plt 
@@ -31,18 +32,18 @@ parser.add_argument('--model', default = 'ConGAE', help = 'Model type: ConGAE, C
 # training parameters
 parser.add_argument('--randomseed',  type=int, default = 1)
 parser.add_argument('--train_epoch', type =int, default = 150 , help = 'number of training epochs')
-parser.add_argument('--lr', default = 5e-5 , help = 'learning rate')
+parser.add_argument('--lr', default = 1e-5, type = float, help = 'learning rate')
 parser.add_argument('--dropout_p', default = 0.2 , help = 'drop out rate')
 parser.add_argument('--adj_drop', default = 0.2 , help = 'edge dropout rate')
 parser.add_argument('--verbal', default = False, type = bool , help = 'print loss during training')
 # 2-layer ConGAE parameters
 parser.add_argument('--input_dim', type=int, default = 4, help = 'input feature dimension')
 parser.add_argument('--n_nodes', type=int, default = 50, help = 'total number of nodes in the graph')
-parser.add_argument('--node_dim1', type=int, default = 300, help = 'node embedding dimension of the first GCN layer')
-parser.add_argument('--node_dim2', type=int, default = 150, help = 'node embedding dimension of the second GCN layer')
-parser.add_argument('--encode_dim', type=int, default = 150, help = 'final graph embedding dimension of the Con-GAE encoder')
-parser.add_argument('--hour_emb', type=int, default = 100, help = 'hour emnbedding dimension')
-parser.add_argument('--week_emb', type=int, default = 100, help = 'week emnbedding dimension')
+parser.add_argument('--node_dim1', type=int, default = 100, help = 'node embedding dimension of the first GCN layer')
+parser.add_argument('--node_dim2', type=int, default = 100, help = 'node embedding dimension of the second GCN layer')
+parser.add_argument('--encode_dim', type=int, default = 100, help = 'final graph embedding dimension of the Con-GAE encoder')
+parser.add_argument('--hour_emb', type=int, default = 200, help = 'hour emnbedding dimension')
+parser.add_argument('--week_emb', type=int, default = 200, help = 'week emnbedding dimension')
 parser.add_argument('--decoder', type=str, default = 'concatDec', help = 'decoder type:concatDec, bilinearDec')
 # deepConGAE parameters
 parser.add_argument('--hidden_list', nargs="*", type=int, default = [300, 150], help = 'the node embedding dimension of each layer of GCN')
@@ -50,6 +51,9 @@ parser.add_argument('--decode_dim', type=int, default = 150, help = 'the node em
 
 # files
 parser.add_argument('--log_dir', default = '../log/' , help = 'directory to save model')
+parser.add_argument('--polluted_training', default = False, type = bool , help = 'whether to mannually pollute small fraction of training data')
+parser.add_argument('--polluted_training_frac',default = 0.05, type=float, help = 'fraction of samples to be polluted')
+parser.add_argument('--polluted_training_seed',  type=int, default = 1, help = 'random seed when generating polluted training set')
 
 args = parser.parse_args()
 print(args)
@@ -68,9 +72,16 @@ if not os.path.exists(result_dir):
 
 # ## load data
 
-dirName =  "../data/selected_50_orig/"
-with open(dirName + 'partition_dict', 'rb') as file:
-    partition = pickle.load(file)
+if args.polluted_training == False:
+    dirName =  "../data/selected_50/"
+    save_name = args.model
+else:
+    dirName = '../data/train_synthetic_pollute{}/geopy_time_{}/'.format(args.polluted_training_seed, args.polluted_training_frac)
+    save_name = '{}_syn{}_{}_time'.format(args.model, args.polluted_training_seed, args.polluted_training_frac)
+
+    
+with open(dirName + 'sample_list', 'rb') as file:
+    all_data = pickle.load(file)
     
 # item_d: whihc time slice each id correspond to
 with open(dirName + 'item_dict', 'rb') as file:
@@ -83,19 +94,13 @@ node_posy =  np.mean(node_X[:, 2:], 1)
 node_X = torch.from_numpy(node_X).float()
 tt_min, tt_max =np.load(dirName + 'tt_minmax.npy' )
 
-
-start_time = 0+24*23
-end_time = 23+24*27
-
-# reset partition
-all_data = partition['train'] + partition['val']
-partition_test = all_data[350:750] # includes NFL, 400 points, 30% are NFL
-partition_val = all_data[:150]  
-partition_train = all_data[150:350] + all_data[750:] # the rest
+# split into training and val
+partition_train, partition_val= train_test_split(all_data, test_size=0.1, random_state=42)
+len(partition_train), len(partition_val), len(all_data )
 
 
+# data loaders
 source_dir = dirName # full sample size (~2000)
-
 # Parameters
 params = {'batch_size': 10,
           'shuffle': True,
@@ -105,15 +110,18 @@ params_val = {'batch_size': 10,
           'shuffle': False,
           'num_workers': 0}
 
-root = '../data/selected_50_pg/root/'
-# data loaders
+params_test = {'batch_size': 1,
+          'shuffle': False,
+          'num_workers': 0}
+
+root = '../data/selected_50/root/'
+
 train_dataset = trafficDataset(root, partition_train, node_X,  item_d, source_dir  )
-test_dataset = trafficDataset(root, partition_test, node_X, item_d, source_dir)
 val_dataset = trafficDataset(root, partition_val, node_X, item_d, source_dir)
 
 train_loader = DataLoader(train_dataset, **params)
-test_loader = DataLoader(test_dataset,**params_val )
 val_loader = DataLoader(val_dataset,**params_val )
+len(train_loader)
 
 
 # ## load model
@@ -207,7 +215,7 @@ model = model.to(device)
 n_epochs = args.train_epoch
 start = time.time()
 best_val = float('inf') # for early stopping
-model_path = args.log_dir + args.model  + '.pt'
+model_path = args.log_dir + save_name  + '.pt'
 lr_decay_step_size = 100
 
 for epoch in range(1, n_epochs+1):
@@ -230,10 +238,10 @@ plt.ylabel("MSE loss")
 plt.legend()
 # plt.ylim(0.4, 1)
 # plt.show()
-plt.savefig(result_dir + args.model +"_training_curve.png")
+plt.savefig(result_dir + save_name +"_training_curve.png")
 
 
 # save args config
-with open(args.log_dir + args.model + '_args.pkl', 'wb') as fp:
+with open(args.log_dir + save_name + '_args.pkl', 'wb') as fp:
     pickle.dump(args, fp)
     

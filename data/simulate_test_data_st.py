@@ -1,6 +1,8 @@
-'''
-simulate_test_data for spactial and temporal anomaly, for differnet anomaly fraction
-'''
+
+# coding: utf-8
+
+# In[ ]:
+
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,6 +16,9 @@ from random import shuffle
 import pickle
 import argparse
 from sklearn.metrics import roc_curve, auc
+
+
+# In[ ]:
 
 
 parser = argparse.ArgumentParser()
@@ -31,15 +36,19 @@ parser.add_argument('--log_dir', default = '../data/test_synthetic/', help = 'lo
 args = parser.parse_args()
 print(args)
 
+
+# In[ ]:
+
+
 #Reproducability 
 np.random.seed(seed=args.randomseed)
 random.seed(args.randomseed)
 
 
+# In[ ]:
+
+
 def get_graph_geo(df):
-    '''
-    transform data from dataframe to geopytorch graph format
-    '''
     edge_index = []
     edge_attr = []
     for i in range(len(df)):
@@ -55,15 +64,20 @@ def get_graph_geo(df):
     return edge_index, edge_attr
 
 
-df_mean = pd.read_pickle('../data/selected50_Q1_weekhour_orig.pkl')
-df_std = pd.read_pickle('../data/selected50_Q1_std_orig.pkl')
+# In[ ]:
 
-tt_min, tt_max =np.load('../data/selected_50_orig/tt_minmax.npy' )
+df_mean = pd.read_pickle('../data/selected50_Q2_mean_orig.pkl')
+df_std = pd.read_pickle('../data/selected50_Q2_std_orig.pkl')
+
+tt_min, tt_max =np.load('../data/selected_50/tt_minmax.npy' )
 nodes = np.load('../data/nodes.npy' )
-node_X = np.load('../data/selected_50_orig/node_X.npy')
+node_X = np.load('../data/selected_50/node_X.npy')
 
 with open('../data/node_dict', 'rb') as file:
      node_dict = pickle.load(file)
+
+
+# In[ ]:
 
 
 #Create save dir
@@ -74,11 +88,17 @@ if not os.path.exists(args.log_dir):
 
 # ## simulate data
 
+# In[ ]:
+
 
 # create pollute list
 leng =  df_mean.shape[1]
 pollute_list = list(range(leng))
 shuffle(pollute_list)
+
+
+# In[ ]:
+
 
 # original, resampled
 df_resample = df_mean.copy()
@@ -87,7 +107,10 @@ df_resample[df_resample > 1] = 1
 df_resample[df_resample < 0] = 0 
 
 
-'''#type 1, spacial anomaly'''
+# In[ ]:
+
+
+'''#type 1, create'''
  
 # copy orig.
 obs_rpca = df_resample.copy() #observation
@@ -112,7 +135,10 @@ for i in range(0, num):
     S_rpca[time_lable] = True
 
 
-'''type 2, temporal anomally, switch am/pm'''
+# In[ ]:
+
+
+'''type 2, switch am/pm'''
 num = int(args.frac_anomaly * leng)
 
 # for rpca
@@ -127,20 +153,28 @@ for i in range(168-num ,168):
     # flip back true label
     week, hour = time_lable
     hour = (hour + 12) % 24
+#     carry = (hour + 12) // 24
+#     week = (week + carry) % 6
     col_fake = (week, hour)
     # append to Q1_rpca
     obs_rpca2[col_fake] = serie
     S_rpca2[col_fake] = True
 
 
-'''save type 1 save as datafream for deeplearning models'''
+# In[ ]:
+
+
+'''save type 1 only, for dl'''
 test_transposed = obs_rpca.transpose()
 
 test_transposed.to_pickle(args.log_dir + 'sp_ano_{}.pkl'.format(args.frac_anomaly))  
 S_rpca.all().to_pickle(args.log_dir + 'sp_labels_ano_{}.pkl'.format(args.frac_anomaly))
 
 
-'''save type 1 as graph structure for ConGAE model'''
+# In[ ]:
+
+
+'''save type 1 only, for geopy'''
 dirName = args.log_dir + '/geopy_sp_ano_{}/'.format(args.frac_anomaly)
 df_save = obs_rpca
 
@@ -177,14 +211,19 @@ labels = S_rpca.all().values
 np.save(dirName +'labels' , labels)
 
 
+# In[ ]:
 
-'''save type 2 save as datafream for deeplearning models'''
+
+'''save type 2 only, for dl'''
 test_transposed = obs_rpca2.transpose()
 test_transposed.to_pickle(args.log_dir + 'time_ano_{}.pkl'.format(args.frac_anomaly))  
 S_rpca2.all().to_pickle(args.log_dir + 'time_labels_ano_{}.pkl'.format(args.frac_anomaly))
 
 
-'''save type 2 as graph structure for ConGAE model'''
+# In[ ]:
+
+
+'''save type 2 only, for geopy'''
 dirName = args.log_dir + '/geopy_temp_ano_{}/'.format(args.frac_anomaly)
 df_save = obs_rpca2
 

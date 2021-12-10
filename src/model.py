@@ -1,19 +1,17 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch_geometric.nn import GCNConv, SAGEConv
+from torch_geometric.nn import GCNConv, SAGEConv, LEConv, GraphConv, ARMAConv, SGConv, TAGConv, TransformerConv
 from torch_geometric.utils import dropout_adj
 
 from layers import bilinearDec, concatDec
 
-
-
-    
+ 
 class ConGAE(torch.nn.Module): 
     '''
     spatial-temporal graph GAE model, with 2 layers of GCN at encoding step.
     '''
-    def __init__(self, input_feat_dim, node_dim1, node_dim2, encode_dim ,dropout= 0.2, adj_drop = 0.2, decoder = 'concatDec', sigmoid = True, n_nodes = 50, hour_emb = 100, week_emb = 100):
+    def __init__(self, input_feat_dim, node_dim1, node_dim2, encode_dim ,dropout= 0.2, adj_drop = 0.2,encoder = 'GraphConv',  decoder = 'concatDec', sigmoid = True, n_nodes = 50, hour_emb = 100, week_emb = 100, ARMAConv_num_stacks = 1, ARMAConv_num_layers = 1, TransformerConv_heads = 1):
         '''
         input_feat_dim = input feature dimension
         node_dim1, node_dim2 - the node embedding dimensions of the two layers of GCN.
@@ -31,9 +29,28 @@ class ConGAE(torch.nn.Module):
         self.sigmoid = sigmoid
         self.node_dim2 = node_dim2
         self.dropout_layer = torch.nn.Dropout(dropout)
+        self.encoder = encoder
         # encode
-        self.conv1 = SAGEConv(input_feat_dim, node_dim1, concat = True)
-        self.conv2 = SAGEConv(node_dim1 , node_dim2, concat = True)
+        if encoder == 'SAGE':
+            self.conv1 = SAGEConv(input_feat_dim, node_dim1) #, concat = True)
+            self.conv2 = SAGEConv(node_dim1 , node_dim2) #, concat = True)
+        elif encoder == 'GraphConv':
+            self.conv1 = GraphConv(input_feat_dim, node_dim1, aggr = 'mean')
+            self.conv2 = GraphConv(node_dim1 , node_dim2, aggr = 'mean')
+        elif encoder == 'TAGConv':
+            self.conv1 = TAGConv(input_feat_dim, node_dim1)
+            self.conv2 = TAGConv(node_dim1 , node_dim2)
+        elif encoder == 'SGConv':
+            self.conv1 = SGConv(input_feat_dim, node_dim1)
+            self.conv2 = SGConv(node_dim1 , node_dim2)
+        elif encoder == 'ARMAConv':
+            self.conv1 = ARMAConv(input_feat_dim, node_dim1, num_stacks = ARMAConv_num_stacks, num_layers = ARMAConv_num_layers)
+            self.conv2 = ARMAConv(node_dim1 , node_dim2, num_stacks = ARMAConv_num_stacks, num_layers = ARMAConv_num_layers)
+        elif encoder == 'TransformerConv':
+            self.conv1 = TransformerConv(input_feat_dim, node_dim1, heads = TransformerConv_heads, edge_dim = 1)
+            self.conv2 = TransformerConv(node_dim1*TransformerConv_heads , node_dim2, heads = 1, edge_dim = 1)
+        else:
+            raise NotImplementedError
         self.hour_embedding = nn.Embedding(24, hour_emb)
         self.week_embedding = nn.Embedding(7, week_emb)
         self.fc = torch.nn.Linear(n_nodes * node_dim2+hour_emb+week_emb, encode_dim)
@@ -54,10 +71,21 @@ class ConGAE(torch.nn.Module):
         '''
         edge_index, edge_attr = dropout_adj(edge_index, edge_attr, p=self.adj_drop, num_nodes=len(x), training=self.training)
         #graph conv
-        x = self.conv1(x, edge_index, edge_weight = edge_attr)
-        x = F.relu(x)
-        x = self.dropout_layer(x)
-        x = self.conv2(x, edge_index, edge_weight = edge_attr)
+        if self.encoder == 'SAGE':
+            x = self.conv1(x, edge_index)
+            x = F.relu(x)
+            x = self.dropout_layer(x)
+            x = self.conv2(x, edge_index)
+        elif self.encoder == 'TransformerConv':
+            x = self.conv1(x, edge_index, edge_attr = edge_attr)
+            x = F.relu(x)
+            x = self.dropout_layer(x)
+            x = self.conv2(x, edge_index, edge_attr = edge_attr)
+        else:
+            x = self.conv1(x, edge_index, edge_weight = edge_attr)
+            x = F.relu(x)
+            x = self.dropout_layer(x)
+            x = self.conv2(x, edge_index, edge_weight = edge_attr)
         x = F.relu(x)
         #stack node embeddings and time embeddings
         z = x.view(-1, self.n_nodes * self.node_dim2)   # (batch_size , #nodes*node_dim2 )       
@@ -99,7 +127,7 @@ class deepConGAE(torch.nn.Module):
     '''
     encoder-decoder for edge prediction, with multi GCN layers for encoder
     '''
-    def __init__(self, input_feat_dim, hidden_list = [300, 150], encode_dim = 150, decode_dim = 150, dropout = 0.2, adj_drop = 0.2, sigmoid = True, n_nodes = 50, hour_emb = 100, week_emb = 100, decoder = 'concatDec'):
+    def __init__(self, input_feat_dim, hidden_list = [300, 150], encode_dim = 100, decode_dim = 100, dropout = 0.2, adj_drop = 0.2, sigmoid = True, n_nodes = 50, hour_emb = 200, week_emb = 200, decoder = 'concatDec'):
         '''
         hidden_list - the node embedding dimension of each layer of GCN
         encode_dim - final graph node embedding dimension
@@ -116,9 +144,9 @@ class deepConGAE(torch.nn.Module):
         self.sigmoid = sigmoid
         # encode
         self.GNNs = torch.nn.ModuleList()
-        self.GNNs.append( SAGEConv(input_feat_dim, hidden_list[0], concat = True))
+        self.GNNs.append( GraphConv(input_feat_dim, hidden_list[0]))
         for i in range(len(hidden_list) - 1):
-            self.GNNs.append(SAGEConv(hidden_list[i], hidden_list[i+1], concat = True))
+            self.GNNs.append(GraphConv(hidden_list[i], hidden_list[i+1]))
 
         self.hour_embedding = nn.Embedding(24, hour_emb)
         self.week_embedding = nn.Embedding(7, week_emb)
@@ -227,8 +255,8 @@ class ConGAE_sp(torch.nn.Module):
         self.node_dim2 = node_dim2
         self.dropout_layer = torch.nn.Dropout(dropout)
         # encode
-        self.conv1 = SAGEConv(input_feat_dim, node_dim1, concat = True)
-        self.conv2 = SAGEConv(node_dim1 , node_dim2, concat = True)
+        self.conv1 = GraphConv(input_feat_dim, node_dim1)
+        self.conv2 = GraphConv(node_dim1 , node_dim2)
         self.fc =  torch.nn.Linear(n_nodes * node_dim2, node_dim2)
         # decode
         self.fc2 =  torch.nn.Linear(node_dim2, n_nodes * node_dim2)         
@@ -302,4 +330,3 @@ class ConGAE_t(ConGAE_sp):
         emb_w = self.week_embedding(week)
         z = torch.cat((emb_h, emb_w), dim=-1)
         return z 
-

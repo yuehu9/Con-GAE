@@ -29,10 +29,27 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--model', default = 'ConGAE', help = 'Model type: ConGAE, ConGAE_t, ConGAE_sp, deepConGAE')
 # files
 parser.add_argument('--log_dir', default = '../log/' , help = 'directory to saved model')
+# to extract corresponding model 
+parser.add_argument('--polluted_training', default = False, type = bool , help = 'whether to mannually pollute small fraction of training data')
+parser.add_argument('--polluted_training_frac',default = 0.05, type=float, help = 'fraction of samples to be polluted')
+parser.add_argument('--polluted_training_seed',  type=int, default = 1, help = 'random seed when generating polluted training set')
+
 
 # retrieve model args
 arg_model = parser.parse_args()
-args_path = arg_model.log_dir + arg_model.model + '_args.pkl'
+
+
+
+if arg_model.polluted_training == False:
+    dirName =  "../data/selected_50/"
+    save_name = arg_model.model
+else:
+    dirName = '../data/train_synthetic_pollute{}/geopy_sp_{}/'.format(arg_model.polluted_training_seed, arg_model.polluted_training_frac)
+    save_name = '{}_syn{}_{}_time'.format(arg_model.model, arg_model.polluted_training_seed, arg_model.polluted_training_frac)
+
+    
+
+args_path = arg_model.log_dir + save_name + '_args.pkl'
 with open(args_path,'rb') as f: 
     args = pickle.load(f)
 root = '../data/selected_50_pg/root/'
@@ -40,7 +57,6 @@ result_dir = args.log_dir + 'results/'
 
 
 # load  data
-dirName =  "../data/selected_50_orig/"
 node_X = np.load(dirName + 'node_X.npy')
 node_posx = np.mean(node_X[:, :2], 1)
 node_posy =  np.mean(node_X[:, 2:], 1)
@@ -67,7 +83,7 @@ if args.model ==  'deepConGAE':
     
 model.float()
 # model_path = args.log_dir + args.model +"_sp" + '.pt'
-model_path = args.log_dir + args.model + '.pt' 
+model_path = args.log_dir +  save_name + '.pt' 
 checkpoint = torch.load(model_path)
 model.load_state_dict(checkpoint['model_state_dict'])
 epoch = checkpoint['epoch']
@@ -101,7 +117,8 @@ def cal_rmse_list(model, data_loader):
             if args.model == 'ConGAE_sp':
                 recon_train = model(graph_data.x, graph_data.edge_index, graph_data.edge_attr)
             else:
-                recon_train = model(graph_data.x, graph_data.edge_index, graph_data.edge_attr,torch.tensor(graph_data.hour), torch.tensor(graph_data.week))                  
+                recon_train = model(graph_data.x, graph_data.edge_index, graph_data.edge_attr,\
+                                graph_data.hour.clone().detach(), graph_data.week.clone().detach())                 
             loss =  calc_sample_rmse(recon_train, graph_data.edge_attr, tt_min, tt_max) / 60
             i += 1
             rmse.append(loss.item())
@@ -147,16 +164,16 @@ auc_avg = np.zeros(6)
 seed_list = ["", "2", '3', '4', '5']
 for file_seed in seed_list:
     aucs = []
-    data_dir = '../data/test_synthetic' + file_seed +'/'
+    data_dir = '../data/test_synthetic' + file_seed +'_Q2/'
     aucs = cal_aucs_st(data_dir)
     auc_avg = auc_avg + np.array(aucs)
 auc_avg = auc_avg / len(seed_list)
 
-print(args.model, 'sp-temp')
+print(save_name, 'sp-temp')
 print(auc_avg)
 
 
-with open(result_dir + args.model +"_st", 'wb') as fp:
+with open(result_dir +  save_name +"_st", 'wb') as fp:
     pickle.dump(auc_avg, fp)
 
 
@@ -201,18 +218,14 @@ auc_avg = np.zeros(6)
 seed_list = ["", "2", '3', '4', '5']
 for file_seed in seed_list:
     aucs = []
-    data_dir = '../data/test_synthetic' + file_seed +'/'
+    data_dir = '../data/test_synthetic' + file_seed +'_Q2/'
     aucs = cal_aucs_sp(model, data_dir)
     auc_avg = auc_avg + np.array(aucs)
 auc_avg = auc_avg / len(seed_list)
 
 
-print(args.model, 'sp')
+print(save_name, 'sp')
 print(auc_avg)
 
-with open(result_dir + args.model +"_sp", 'wb') as fp:
+with open(result_dir +  save_name +"_sp", 'wb') as fp:
     pickle.dump(auc_avg, fp)
-    
-
-
-       
