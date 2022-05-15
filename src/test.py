@@ -16,7 +16,8 @@ from random import shuffle
 import pickle
 import torchvision.transforms as transforms
 import time
-from torch_geometric.data import InMemoryDataset, Dataset, Data, DataLoader
+from torch_geometric.data import InMemoryDataset, Dataset, Data
+from torch_geometric.loader import DataLoader
 import math
 
 from data_util import ConTrafficGraphDataset as trafficDataset
@@ -31,7 +32,7 @@ parser.add_argument('--model', default = 'ConGAE', help = 'Model type: ConGAE, C
 parser.add_argument('--log_dir', default = '../log/' , help = 'directory to saved model')
 # to extract corresponding model 
 parser.add_argument('--polluted_training', default = False, type = bool , help = 'whether to mannually pollute small fraction of training data')
-parser.add_argument('--polluted_training_frac',default = 0.05, type=float, help = 'fraction of samples to be polluted')
+parser.add_argument('--polluted_training_frac',default = 0.1, type=float, help = 'fraction of samples to be polluted')
 parser.add_argument('--polluted_training_seed',  type=int, default = 1, help = 'random seed when generating polluted training set')
 
 
@@ -95,137 +96,51 @@ print("best model is at epoch", epoch)
 
 # specify loss function
 criterion = nn.MSELoss()
-def  calc_sample_rmse(recon_adj, adj, tt_min, tt_max):
-    '''
-    calculate the rmse of a given graph sample
-    '''
+def calc_rmse(recon_adj, adj, tt_min, tt_max):
     adj = adj * (tt_max - tt_min) + tt_min
     recon_adj = recon_adj * (tt_max - tt_min) + tt_min
     rmse = criterion(recon_adj, adj)
     return torch.sqrt(rmse)
 
 
-def cal_rmse_list(model, data_loader):
-    '''cal. the list rmse loss for every sample in the dataset'''
-    model = model.to('cpu')
-    rmse = []
-    i = 0
-    for graph_data in data_loader:
-        graph_data = graph_data.to('cpu')
-        model.eval()
-        with torch.no_grad():    
-            if args.model == 'ConGAE_sp':
-                recon_train = model(graph_data.x, graph_data.edge_index, graph_data.edge_attr)
-            else:
-                recon_train = model(graph_data.x, graph_data.edge_index, graph_data.edge_attr,\
-                                graph_data.hour.clone().detach(), graph_data.week.clone().detach())                 
-            loss =  calc_sample_rmse(recon_train, graph_data.edge_attr, tt_min, tt_max) / 60
-            i += 1
-            rmse.append(loss.item())
-    return rmse
+dirTest = '../data/test_synthetic/geopy_sp_ano_0.1/'
 
+print ('loading test data from', dirTest)
+with open(dirTest + 'name_list', 'rb') as file:
+    name_list = pickle.load(file)
+    
+# item_d: whihc time slice each id correspond to
+with open(dirTest + 'item_dict', 'rb') as file:
+     item_d_test = pickle.load(file)
 
-'''cal spatial and temporal anomalies with differen anomaly ratio'''
-def cal_aucs_st(data_dir):   
-    aucs = []
-    ano_types = ['sp', 'temp']
-    for ano in ano_types:
-        for frac_ano in [0.05, 0.1, 0.2]:
-            '''# load testing set'''
-            dirTest = data_dir  + '/geopy_{}_ano_{}/'.format(ano, frac_ano)
+labels = np.load(dirTest + 'labels.npy')
+        
+params_test = {'batch_size': 1,
+          'shuffle': False,
+          'num_workers': 0}
 
-            with open(dirTest + 'name_list', 'rb') as file:
-                name_list = pickle.load(file)
+source_dir = dirTest 
+sim_test_dataset = trafficDataset(root, name_list, node_X, item_d_test, source_dir = source_dir, sim = True, labels = labels)
+sim_test_loader = DataLoader(sim_test_dataset, **params_test)
 
-            with open(dirTest + 'item_dict', 'rb') as file:
-                 item_d_test = pickle.load(file)
-
-            labels = np.load(dirTest + 'labels.npy')
-
-            params_test = {'batch_size': 1,
-                      'shuffle': False,
-                      'num_workers': 0}
-
-            sim_test_dataset = trafficDataset(root, name_list, node_X, 
-                                    item_d_test, source_dir = dirTest, sim = True, labels = labels)
-            sim_test_loader = DataLoader(sim_test_dataset, **params_test)
-
-            '''cal. testing loss'''
-            rmse_test = cal_rmse_list(model, sim_test_loader)
-
-            '''# auc for outlier'''
-            fpr, tpr, thresholds = roc_curve(labels, rmse_test)
-            roc_auc= auc(fpr, tpr)
-            aucs.append(roc_auc)
-    return aucs
-
-# compute auc scores for 5 synthetic datasets with different seeds and average
-auc_avg = np.zeros(6)
-seed_list = ["", "2", '3', '4', '5']
-for file_seed in seed_list:
-    aucs = []
-    data_dir = '../data/test_synthetic' + file_seed +'_Q2/'
-    aucs = cal_aucs_st(data_dir)
-    auc_avg = auc_avg + np.array(aucs)
-auc_avg = auc_avg / len(seed_list)
-
-print(save_name, 'sp-temp')
-print(auc_avg)
-
-
-with open(result_dir +  save_name +"_st", 'wb') as fp:
-    pickle.dump(auc_avg, fp)
-
-
-
-'''
-    calculate auc score for spatial anomalies with different anomaly magnitude
-'''
-def cal_aucs_sp(model, data_dir):    
-    aucs = []
-    for frac_ano in [0.25, 0.5]:
-        for mag in [0.05, 0.1, 0.2]:
-            '''# load testing set'''
-            dirTest = data_dir +  'geopy_sp_{}_{}/'.format(mag, frac_ano)
-
-            with open(dirTest + 'name_list', 'rb') as file:
-                name_list = pickle.load(file)
-
-            with open(dirTest + 'item_dict', 'rb') as file:
-                 item_d_test = pickle.load(file)
-
-            labels = np.load(dirTest + 'labels.npy')
-
-            params_test = {'batch_size': 1,
-                      'shuffle': False,
-                      'num_workers': 0}
-
-            sim_test_dataset = trafficDataset(root, name_list, node_X, 
-                                    item_d_test, source_dir = dirTest, sim = True, labels = labels)
-            sim_test_loader = DataLoader(sim_test_dataset, **params_test)
-           
-            '''cal. testing loss'''
-            rmse_test = cal_rmse_list(model, sim_test_loader)
-            
-            '''auc for outlier'''
-            fpr, tpr, thresholds = roc_curve(labels, rmse_test)
-            roc_auc= auc(fpr, tpr)
-            aucs.append(roc_auc)
-    return aucs           
-
-# compute auc scores for 5 synthetic datasets with different seeds and average
-auc_avg = np.zeros(6)
-seed_list = ["", "2", '3', '4', '5']
-for file_seed in seed_list:
-    aucs = []
-    data_dir = '../data/test_synthetic' + file_seed +'_Q2/'
-    aucs = cal_aucs_sp(model, data_dir)
-    auc_avg = auc_avg + np.array(aucs)
-auc_avg = auc_avg / len(seed_list)
-
-
-print(save_name, 'sp')
-print(auc_avg)
-
-with open(result_dir +  save_name +"_sp", 'wb') as fp:
-    pickle.dump(auc_avg, fp)
+model = model.to('cpu')
+rmse = []
+i = 0
+for graph_data in sim_test_loader:
+    graph_data = graph_data.to('cpu')
+    model.eval()
+    with torch.no_grad():                   
+        recon_train = model(graph_data.x, graph_data.edge_index, graph_data.edge_attr,\
+                       graph_data.hour.clone().detach(), graph_data.week.clone().detach())
+        loss = calc_rmse(recon_train, graph_data.edge_attr, tt_min, tt_max) / 60
+        date = sim_test_dataset.getdatetime(i)
+        i += 1
+#         label = int(graph_data.label.data[0])
+        rmse.append([date, loss.item()])
+        
+df_test = pd.DataFrame(rmse)
+df_test.columns = ['date','rmse']
+fpr, tpr, thresholds = roc_curve(labels, df_test['rmse'].values)
+roc_auc= auc(fpr, tpr)
+print(save_name, 'spatial anomaly AUC score')
+print(roc_auc)

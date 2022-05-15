@@ -1,7 +1,5 @@
 
-# coding: utf-8
-
-# In[ ]:
+# simulate_test_data for spactial and temporal anomaly, for differnet anomaly fraction
 
 
 import pandas as pd

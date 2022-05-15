@@ -19,7 +19,9 @@ from random import shuffle
 import pickle
 import torchvision.transforms as transforms
 import time
-from torch_geometric.data import InMemoryDataset, Dataset, Data, DataLoader
+
+from torch_geometric.data import InMemoryDataset, Dataset, Data
+from torch_geometric.loader import DataLoader
 import math
 
 from data_util import ConTrafficGraphDataset as trafficDataset
@@ -32,18 +34,18 @@ parser.add_argument('--model', default = 'ConGAE', help = 'Model type: ConGAE, C
 # training parameters
 parser.add_argument('--randomseed',  type=int, default = 1)
 parser.add_argument('--train_epoch', type =int, default = 150 , help = 'number of training epochs')
-parser.add_argument('--lr', default = 1e-5, type = float, help = 'learning rate')
+parser.add_argument('--lr', default = 1e-3, type = float, help = 'learning rate')
 parser.add_argument('--dropout_p', default = 0.2 , help = 'drop out rate')
 parser.add_argument('--adj_drop', default = 0.2 , help = 'edge dropout rate')
 parser.add_argument('--verbal', default = False, type = bool , help = 'print loss during training')
 # 2-layer ConGAE parameters
 parser.add_argument('--input_dim', type=int, default = 4, help = 'input feature dimension')
-parser.add_argument('--n_nodes', type=int, default = 50, help = 'total number of nodes in the graph')
-parser.add_argument('--node_dim1', type=int, default = 100, help = 'node embedding dimension of the first GCN layer')
-parser.add_argument('--node_dim2', type=int, default = 100, help = 'node embedding dimension of the second GCN layer')
-parser.add_argument('--encode_dim', type=int, default = 100, help = 'final graph embedding dimension of the Con-GAE encoder')
-parser.add_argument('--hour_emb', type=int, default = 200, help = 'hour emnbedding dimension')
-parser.add_argument('--week_emb', type=int, default = 200, help = 'week emnbedding dimension')
+parser.add_argument('--n_nodes', type=int, default = 49, help = 'total number of nodes in the graph')
+parser.add_argument('--node_dim1', type=int, default = 150, help = 'node embedding dimension of the first GCN layer')
+parser.add_argument('--node_dim2', type=int, default = 50, help = 'node embedding dimension of the second GCN layer')
+parser.add_argument('--encode_dim', type=int, default = 50, help = 'final graph embedding dimension of the Con-GAE encoder')
+parser.add_argument('--hour_emb', type=int, default = 100, help = 'hour emnbedding dimension')
+parser.add_argument('--week_emb', type=int, default = 100, help = 'week emnbedding dimension')
 parser.add_argument('--decoder', type=str, default = 'concatDec', help = 'decoder type:concatDec, bilinearDec')
 # deepConGAE parameters
 parser.add_argument('--hidden_list', nargs="*", type=int, default = [300, 150], help = 'the node embedding dimension of each layer of GCN')
@@ -80,9 +82,11 @@ else:
     save_name = '{}_syn{}_{}_time'.format(args.model, args.polluted_training_seed, args.polluted_training_frac)
 
     
-with open(dirName + 'sample_list', 'rb') as file:
-    all_data = pickle.load(file)
-    
+with open(dirName + 'partition_dict', 'rb') as file:
+    partition = pickle.load(file)
+# reset partition
+all_data = partition['train'] + partition['val']
+
 # item_d: whihc time slice each id correspond to
 with open(dirName + 'item_dict', 'rb') as file:
      item_d = pickle.load(file)
@@ -96,7 +100,7 @@ tt_min, tt_max =np.load(dirName + 'tt_minmax.npy' )
 
 # split into training and val
 partition_train, partition_val= train_test_split(all_data, test_size=0.1, random_state=42)
-len(partition_train), len(partition_val), len(all_data )
+# len(partition_train), len(partition_val), len(all_data )
 
 
 # data loaders
@@ -216,7 +220,7 @@ n_epochs = args.train_epoch
 start = time.time()
 best_val = float('inf') # for early stopping
 model_path = args.log_dir + save_name  + '.pt'
-lr_decay_step_size = 100
+lr_decay_step_size = 20
 
 for epoch in range(1, n_epochs+1):
     train_loss, val_loss, best_val = train(epoch, train_loader, val_loader, best_val)
