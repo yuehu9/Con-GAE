@@ -71,7 +71,7 @@ tt_min, tt_max =np.load('../data/selected_50/tt_minmax.npy' )
 nodes = np.load('../data/nodes.npy' )
 node_X = np.load('../data/selected_50/node_X.npy')
 
-with open('../data/node_dict', 'rb') as file:
+with open('../data/selected_50/node_dict', 'rb') as file:
      node_dict = pickle.load(file)
 
 

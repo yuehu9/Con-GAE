@@ -50,14 +50,14 @@ def get_graph_geo(df):
 
 # In[ ]:
 
-df_mean = pd.read_pickle('../data/selected50_Q2_mean_orig.pkl')
-df_std = pd.read_pickle('../data/selected50_Q2_std_orig.pkl')
+df_mean = pd.read_pickle('../data/selected50_test_weekhour.pkl')
+df_std = pd.read_pickle('../data/selected50_test_std.pkl')
 
 tt_min, tt_max =np.load('../data/selected_50/tt_minmax.npy' )
 nodes = np.load('../data/nodes.npy' )
 node_X = np.load('../data/selected_50/node_X.npy')
 
-with open('../data/node_dict', 'rb') as file:
+with open('../data/selected_50/node_dict', 'rb') as file:
      node_dict = pickle.load(file)
 
 
